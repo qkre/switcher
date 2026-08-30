@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="스위처">
+<meta name="theme-color" content="#111318">
+<title>스위처 (직접 연결)</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#fff; --fg:#14171c; --muted:#6b7280;
+    --line:#e3e6ea; --on:#1e7f4b; --off:#b03636; --accent:#2563eb;
+    --chip:#eceef1; --warn:#8a6d1f; --warnbg:#fdf6e3;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --bg:#111318; --card:#1a1d24; --fg:#e8eaed; --muted:#9aa3af;
+           --line:#2a2f39; --on:#2ea36a; --off:#d05252; --accent:#5b8cff;
+           --chip:#252932; --warn:#e0c070; --warnbg:#2a2419; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:16px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Segoe UI",sans-serif;
+       padding:max(16px,env(safe-area-inset-top)) 16px max(24px,env(safe-area-inset-bottom));
+       -webkit-tap-highlight-color:transparent}
+  .wrap{max-width:460px;margin:0 auto}
+  h1{font-size:20px;margin:4px 0 2px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:16px;word-break:break-all}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+        padding:14px;margin-bottom:12px}
+  .card h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:600}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  button{appearance:none;border:none;border-radius:12px;padding:18px 12px;
+         font-size:17px;font-weight:700;color:#fff;cursor:pointer;
+         transition:transform .06s ease,opacity .15s ease}
+  button:active{transform:scale(.97)}
+  button:disabled{opacity:.45;cursor:default}
+  .on{background:var(--on)} .off{background:var(--off)}
+  #status{margin-top:14px;padding:12px 14px;border-radius:12px;
+          background:var(--card);border:1px solid var(--line);
+          font-size:14px;color:var(--muted);min-height:44px;word-break:break-word}
+  #status.ok{color:var(--on)} #status.err{color:var(--off)}
+  .hide{display:none}
+
+  .conn{display:flex;align-items:center;gap:8px;font-size:15px;margin-bottom:12px}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--muted);flex:none}
+  .dot.up{background:var(--on)} .dot.down{background:var(--off)}
+  .dot.busy{background:var(--accent)}
+  .conn-btns{display:grid;grid-template-columns:1.3fr 1fr;gap:8px}
+  .conn-btns button{padding:14px 6px;font-size:15px}
+  .conn-btns .link{background:var(--accent)}
+  .conn-btns .ghost{background:var(--chip);color:var(--fg)}
+
+  .opt{display:flex;align-items:center;justify-content:space-between;
+       padding:9px 0;border-top:1px solid var(--line);font-size:14px}
+  .opt:first-of-type{border-top:none}
+  .seg{display:flex;gap:6px}
+  .seg span{padding:7px 14px;border-radius:9px;background:var(--chip);
+            color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;
+            user-select:none}
+  .seg span.sel{background:var(--accent);color:#fff}
+
+  .note{background:var(--warnbg);border:1px solid var(--line);color:var(--warn);
+        border-radius:12px;padding:14px;font-size:14px;line-height:1.6;
+        margin-bottom:12px}
+  .note b{color:var(--fg)}
+  .note code{background:var(--chip);color:var(--fg);padding:1px 5px;
+             border-radius:5px;font-size:13px}
+  .note a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>스위처</h1>
+  <div class="sub" id="meta">폰이 스위처에 직접 연결합니다 (PC 불필요)</div>
+
+  <!-- Web Bluetooth 를 못 쓰는 브라우저(사파리 등)에서만 보인다 -->
+  <div class="note hide" id="unsupported">
+    <b>이 브라우저는 블루투스를 쓸 수 없습니다.</b><br>
+    iOS 사파리·크롬은 Web Bluetooth 를 지원하지 않습니다.<br><br>
+    App Store 에서 <b>Bluefy</b> 를 설치한 뒤, 그 앱에서 이 주소를 여세요.
+  </div>
+
+  <div id="app">
+    <div class="card">
+      <h2>연결</h2>
+      <div class="conn">
+        <span class="dot" id="c_dot"></span>
+        <span id="c_text">연결 안 됨</span>
+      </div>
+      <div class="conn-btns">
+        <button class="link" id="c_connect" onclick="connect()">연결하기</button>
+        <button class="ghost" id="c_disconnect" onclick="disconnect()">끊기</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>스위치1</h2>
+      <div class="row">
+        <button class="on"  onclick="send(1,'on')">ON</button>
+        <button class="off" onclick="send(1,'off')">OFF</button>
+      </div>
+    </div>
+
+    <div class="card hide" id="sw2">
+      <h2>스위치2</h2>
+      <div class="row">
+        <button class="on"  onclick="send(2,'on')">ON</button>
+        <button class="off" onclick="send(2,'off')">OFF</button>
+      </div>
+    </div>
+
+    <div class="card hide" id="swall">
+      <h2>둘 다</h2>
+      <div class="row">
+        <button class="on"  onclick="send('all','on')">모두 ON</button>
+        <button class="off" onclick="send('all','off')">모두 OFF</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>설정</h2>
+      <div class="opt">
+        <span>스위처 종류</span>
+        <div class="seg" id="seg_type">
+          <span data-v="1">1구</span><span data-v="2">2구</span>
+        </div>
+      </div>
+      <div class="opt">
+        <span>ON/OFF 반대로</span>
+        <div class="seg" id="seg_invert">
+          <span data-v="0">그대로</span><span data-v="1">반대로</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="status">준비됨</div>
+  </div>
+</div>
+
+<script>
+/* 안드로이드 Flutter 앱(main.dart) 및 pyswitcherio 와 동일한 값 */
+const SERVICE_UUID = '0000150b-0000-1000-8000-00805f9b34fb';
+const CHAR_UUID    = '000015ba-0000-1000-8000-00805f9b34fb';
+
+/* 명령 바이트: 1구 on=00 off=01 / 2구 on=05 off=03 */
+const KEYS = {
+  '1:on':  0x00, '1:off': 0x01,
+  '2:on':  0x05, '2:off': 0x03,
+};
+
+const $ = s => document.querySelector(s);
+let device = null;      // BluetoothDevice
+let characteristic = null;
+let busy = false;
+
+/* ---------- 설정 (이 폰에만 저장) ---------- */
+function load(key, dflt){
+  try { const v = localStorage.getItem(key); return v === null ? dflt : v; }
+  catch(e) { return dflt; }
+}
+function save(key, value){ try { localStorage.setItem(key, value); } catch(e) {} }
+
+let devType = parseInt(load('type', '2'), 10) === 1 ? 1 : 2;
+let invert  = load('invert', '0') === '1';
+
+function renderSeg(id, value){
+  document.querySelectorAll('#' + id + ' span').forEach(el => {
+    el.classList.toggle('sel', el.dataset.v === String(value));
+  });
+}
+function renderSettings(){
+  renderSeg('seg_type', devType);
+  renderSeg('seg_invert', invert ? 1 : 0);
+  const one = devType !== 2;
+  $('#sw2').classList.toggle('hide', one);
+  $('#swall').classList.toggle('hide', one);
+}
+$('#seg_type').addEventListener('click', e => {
+  if (!e.target.dataset.v) return;
+  devType = parseInt(e.target.dataset.v, 10);
+  save('type', devType); renderSettings();
+});
+$('#seg_invert').addEventListener('click', e => {
+  if (!e.target.dataset.v) return;
+  invert = e.target.dataset.v === '1';
+  save('invert', invert ? '1' : '0'); renderSettings();
+});
+
+/* ---------- 표시 ---------- */
+function setStatus(msg, cls){
+  const el = $('#status'); el.textContent = msg; el.className = cls || '';
+}
+function setConn(state, text){
+  $('#c_dot').className = 'dot ' + state;
+  $('#c_text').textContent = text;
+}
+function connected(){
+  return !!(device && device.gatt && device.gatt.connected && characteristic);
+}
+function setBusy(b){
+  busy = b;
+  document.querySelectorAll('.card button').forEach(x => x.disabled = b);
+  if (!b) refresh();
+}
+function refresh(){
+  const up = connected();
+  setConn(up ? 'up' : 'down',
+          up ? ('연결됨 · ' + (device.name || '이름 없음')) : '연결 안 됨');
+  $('#c_connect').disabled = busy || up;
+  $('#c_disconnect').disabled = busy || !up;
+}
+
+/* ---------- 연결 ---------- */
+async function connect(){
+  if (busy) return;
+  setBusy(true);
+  setConn('busy', '기기를 고르세요...');
+  try {
+    /* requestDevice 는 반드시 사용자가 누른 직후에만 호출할 수 있다.
+       이름이 광고에서 빠질 때가 있어 서비스 UUID 로도 잡히게 필터를 둘 준다. */
+    device = await navigator.bluetooth.requestDevice({
+      filters: [
+        { services: [SERVICE_UUID] },
+        { namePrefix: 'SWITCHER' }
+      ],
+      optionalServices: [SERVICE_UUID]
+    });
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+    setConn('busy', '연결하는 중...');
+    await openGatt();
+    setStatus('연결됐습니다.', 'ok');
+  } catch (e) {
+    characteristic = null;
+    setStatus(describe(e), 'err');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function openGatt(){
+  const server = await device.gatt.connect();
+  const service = await server.getPrimaryService(SERVICE_UUID);
+  characteristic = await service.getCharacteristic(CHAR_UUID);
+}
+
+function onDisconnected(){
+  characteristic = null;
+  setStatus('연결이 끊겼습니다. 다시 연결하세요.', 'err');
+  refresh();
+}
+
+async function disconnect(){
+  if (busy) return;
+  setBusy(true);
+  try {
+    if (device && device.gatt && device.gatt.connected) device.gatt.disconnect();
+    characteristic = null;
+    setStatus('연결을 끊었습니다.', 'ok');
+  } finally {
+    setBusy(false);
+  }
+}
+
+/* ---------- 명령 ---------- */
+async function writeKey(index, action){
+  const byte = KEYS[index + ':' + action];
+  if (byte === undefined) throw new Error('알 수 없는 명령');
+  const data = new Uint8Array([byte]);
+  /* 기기에 따라 응답을 요구하기도, 안 하기도 한다. 지원하는 쪽으로 쓴다. */
+  if (characteristic.properties && characteristic.properties.write) {
+    await characteristic.writeValueWithResponse(data);
+  } else {
+    await characteristic.writeValueWithoutResponse(data);
+  }
+}
+
+async function send(target, action){
+  if (busy) return;
+  if (invert) action = (action === 'on') ? 'off' : 'on';
+
+  const targets = (target === 'all') ? (devType === 2 ? [1, 2] : [1]) : [target];
+  setBusy(true);
+  setStatus((target === 'all' ? '둘 다 ' : '스위치' + target + ' ')
+            + action.toUpperCase() + ' 전송 중...');
+  try {
+    if (!connected()){
+      /* 끊겨 있으면 한 번 되살려 본다. 이미 고른 기기라 선택창은 안 뜬다. */
+      if (!device) throw new Error('먼저 연결하기를 누르세요.');
+      await openGatt();
+    }
+    for (const t of targets) await writeKey(t, action);
+    setStatus('전송 완료', 'ok');
+  } catch (e) {
+    setStatus('실패: ' + describe(e), 'err');
+  } finally {
+    setBusy(false);
+  }
+}
+
+function describe(e){
+  const msg = (e && e.message) ? e.message : String(e);
+  if (e && e.name === 'NotFoundError') return '기기를 고르지 않았거나 찾지 못했습니다.';
+  if (e && e.name === 'SecurityError')
+    return 'HTTPS 페이지에서만 블루투스를 쓸 수 있습니다.';
+  if (e && e.name === 'NetworkError')
+    return '연결이 끊겼습니다. 스위처에 가까이 가서 다시 시도하세요.';
+  return msg;
+}
+
+/* ---------- 시작 ---------- */
+if (!navigator.bluetooth) {
+  $('#unsupported').classList.remove('hide');
+  $('#app').classList.add('hide');
+} else {
+  renderSettings();
+  refresh();
+  /* 이전에 허용한 기기가 있으면 선택창 없이 다시 붙일 수 있다.
+     (지원하지 않는 브라우저에서는 조용히 넘어간다) */
+  if (navigator.bluetooth.getDevices) {
+    navigator.bluetooth.getDevices().then(list => {
+      if (list && list.length && !device) {
+        device = list[0];
+        device.addEventListener('gattserverdisconnected', onDisconnected);
+        setStatus('이전 기기를 기억하고 있습니다. 연결하기를 누르세요.');
+        refresh();
+      }
+    }).catch(() => {});
+  }
+}
+</script>
+</body>
+</html>

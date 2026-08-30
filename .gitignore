@@ -1,0 +1,35 @@
+# Python
+venv/
+__pycache__/
+config.json
+test.py
+*.hprof
+
+# Flutter/Dart
+.dart_tool/
+.buildlog/
+.packages
+.pub/
+pubspec.lock
+.idea/
+**/local.properties
+android/.gradle/
+**/build/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+
+# Binary / OS
+*.iml
+*.log
+.DS_Store
+Thumbs.db
+
+# 빌드 캐시 (경로 어디에 있든 제외)
+**/.gradle/
+**/.dart_tool/
+**/.cxx/
+*.tmp
+
+# 실행 중 생기는 사용자 데이터
+schedules.json
+server.log

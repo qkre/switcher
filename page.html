@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="스위처">
+<meta name="theme-color" content="#111318">
+<title>스위처</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#fff; --fg:#14171c; --muted:#6b7280;
+    --line:#e3e6ea; --on:#1e7f4b; --off:#b03636; --accent:#2563eb;
+    --chip:#eceef1;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --bg:#111318; --card:#1a1d24; --fg:#e8eaed; --muted:#9aa3af;
+           --line:#2a2f39; --on:#2ea36a; --off:#d05252; --accent:#5b8cff;
+           --chip:#252932; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:16px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Segoe UI",sans-serif;
+       padding:max(16px,env(safe-area-inset-top)) 16px max(24px,env(safe-area-inset-bottom));
+       -webkit-tap-highlight-color:transparent}
+  .wrap{max-width:460px;margin:0 auto}
+  h1{font-size:20px;margin:4px 0 2px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:16px;word-break:break-all}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+        padding:14px;margin-bottom:12px}
+  .card h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:600}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  button{appearance:none;border:none;border-radius:12px;padding:18px 12px;
+         font-size:17px;font-weight:700;color:#fff;cursor:pointer;
+         transition:transform .06s ease,opacity .15s ease}
+  button:active{transform:scale(.97)}
+  button:disabled{opacity:.45;cursor:default}
+  .on{background:var(--on)} .off{background:var(--off)}
+  #status{margin-top:14px;padding:12px 14px;border-radius:12px;
+          background:var(--card);border:1px solid var(--line);
+          font-size:14px;color:var(--muted);min-height:44px;word-break:break-word}
+  #status.ok{color:var(--on)} #status.err{color:var(--off)}
+  .pin{display:flex;gap:8px;margin-bottom:12px}
+  .pin input{flex:1;padding:12px;border-radius:10px;border:1px solid var(--line);
+             background:var(--card);color:var(--fg);font-size:16px}
+  .pin button{background:var(--accent);padding:12px 16px;font-size:15px}
+  .hide{display:none}
+
+  /* ---- 연결 ---- */
+  .conn{display:flex;align-items:center;gap:8px;font-size:15px;margin-bottom:12px}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--muted);flex:none}
+  .dot.up{background:var(--on)}
+  .dot.down{background:var(--off)}
+  .dot.busy{background:var(--accent)}
+  .conn-btns{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:8px}
+  .conn-btns button{padding:13px 6px;font-size:14px}
+  .conn-btns .link{background:var(--accent)}
+  .conn-btns .ghost{background:var(--chip);color:var(--fg)}
+
+  /* ---- 예약 ---- */
+  .sched-item{display:flex;align-items:center;gap:10px;padding:10px 0;
+              border-top:1px solid var(--line)}
+  .sched-item:first-child{border-top:none}
+  .sched-item.off-state{opacity:.45}
+  .sched-time{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;
+              min-width:64px}
+  .sched-desc{flex:1;min-width:0}
+  /* 한글이 글자 단위로 끊기지 않게 */
+  .sched-desc .what{font-size:14px;word-break:keep-all;overflow-wrap:anywhere}
+  .sched-desc .when{font-size:12px;color:var(--muted);word-break:keep-all}
+  .sched-btn{padding:8px 10px;font-size:13px;font-weight:600;border-radius:9px;
+             background:var(--chip);color:var(--fg)}
+  .sched-btn.del{background:transparent;color:var(--off);padding:8px 6px}
+  .empty{color:var(--muted);font-size:14px;padding:6px 0}
+
+  .form{display:flex;flex-direction:column;gap:10px;margin-top:12px;
+        padding-top:12px;border-top:1px solid var(--line)}
+  .form .line{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  /* 시각 칸은 "오전 12:00" 이 다 들어가도록 한 줄 전체를 쓴다 */
+  .form .line.solo{grid-template-columns:1fr}
+  .form input[type=time],.form select,.form input[type=text]{
+      width:100%;min-width:0;padding:11px 10px;border-radius:10px;
+      border:1px solid var(--line);
+      background:var(--bg);color:var(--fg);font-size:16px}
+  .form input[type=time]{font-variant-numeric:tabular-nums}
+  .days{display:flex;gap:6px}
+  .day{flex:1;padding:9px 0;border-radius:9px;background:var(--chip);
+       color:var(--muted);font-size:13px;font-weight:600;text-align:center;
+       cursor:pointer;user-select:none}
+  .day.sel{background:var(--accent);color:#fff}
+  .form .add{background:var(--accent);font-size:15px;padding:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>스위처</h1>
+  <div class="sub" id="meta">불러오는 중...</div>
+
+  <div class="pin hide" id="pinbox">
+    <input id="pin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off">
+    <button onclick="savePin()">확인</button>
+  </div>
+
+  <div class="card">
+    <h2>연결</h2>
+    <div class="conn">
+      <span class="dot" id="c_dot"></span>
+      <span id="c_text">확인 중...</span>
+    </div>
+    <div class="conn-btns">
+      <button class="link" id="c_connect" onclick="doConnect(false)">연결하기</button>
+      <button class="ghost" onclick="doConnect(true)">다시 찾기</button>
+      <button class="ghost" onclick="doDisconnect()">연결 끊기</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>스위치1</h2>
+    <div class="row">
+      <button class="on"  onclick="send(1,'on')">ON</button>
+      <button class="off" onclick="send(1,'off')">OFF</button>
+    </div>
+  </div>
+
+  <div class="card hide" id="sw2">
+    <h2>스위치2</h2>
+    <div class="row">
+      <button class="on"  onclick="send(2,'on')">ON</button>
+      <button class="off" onclick="send(2,'off')">OFF</button>
+    </div>
+  </div>
+
+  <div class="card hide" id="swall">
+    <h2>둘 다</h2>
+    <div class="row">
+      <button class="on"  onclick="send('all','on')">모두 ON</button>
+      <button class="off" onclick="send('all','off')">모두 OFF</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>예약</h2>
+    <div id="schedlist"><div class="empty">불러오는 중...</div></div>
+    <div class="form">
+      <div class="line solo">
+        <input id="f_time" type="time" value="07:00">
+      </div>
+      <div class="line">
+        <select id="f_sw">
+          <option value="1">스위치1</option>
+          <option value="2" id="f_sw2">스위치2</option>
+          <option value="all" id="f_swall">둘 다</option>
+        </select>
+        <select id="f_act">
+          <option value="on">켜기</option>
+          <option value="off">끄기</option>
+        </select>
+      </div>
+      <div class="days" id="f_days"></div>
+      <input id="f_label" type="text" maxlength="40" placeholder="이름 (선택) 예: 아침 거실 불">
+      <button class="add" onclick="addSched()">예약 추가</button>
+    </div>
+  </div>
+
+  <div id="status">준비됨</div>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+const DAY_NAMES = ['월','화','수','목','금','토','일'];
+let busy = false;
+let selectedDays = [0,1,2,3,4,5,6];
+
+/* ---------- 공통 ---------- */
+function pin(){ try { return localStorage.getItem('pin') || ''; } catch(e) { return ''; } }
+function savePin(){
+  try { localStorage.setItem('pin', $('#pin').value.trim()); } catch(e) {}
+  $('#pin').value = ''; refresh(); loadScheds();
+}
+function setStatus(msg, cls){
+  const el = $('#status');
+  el.textContent = msg;
+  el.className = cls || '';
+}
+function setBusy(b){
+  busy = b;
+  document.querySelectorAll('.card button').forEach(x => x.disabled = b);
+}
+async function api(path, opts){
+  opts = opts || {};
+  opts.headers = Object.assign({'X-Pin': pin()}, opts.headers || {});
+  const r = await fetch(path, opts);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+  return data;
+}
+function jpost(path, body){
+  return api(path, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body || {})
+  });
+}
+
+/* ---------- 연결 ---------- */
+function setConn(state, text){
+  $('#c_dot').className = 'dot ' + state;
+  $('#c_text').textContent = text;
+}
+
+async function doConnect(rescan){
+  if (busy) return;
+  setBusy(true);
+  setConn('busy', rescan ? '처음부터 다시 찾는 중... (최대 30초)'
+                         : '연결하는 중... (최대 30초)');
+  try {
+    await jpost('/api/connect', {rescan: !!rescan});
+    setStatus('연결됐습니다.', 'ok');
+  } catch (e) {
+    setStatus('연결 실패: ' + e.message, 'err');
+  } finally {
+    setBusy(false);
+    refresh();
+  }
+}
+
+async function doDisconnect(){
+  if (busy) return;
+  setBusy(true);
+  try {
+    await jpost('/api/disconnect', {});
+    setStatus('연결을 끊었습니다.', 'ok');
+  } catch (e) {
+    setStatus('실패: ' + e.message, 'err');
+  } finally {
+    setBusy(false);
+    refresh();
+  }
+}
+
+/* ---------- 상태 ---------- */
+async function refresh(){
+  try {
+    const s = await api('/api/status');
+    $('#pinbox').classList.add('hide');
+    $('#meta').textContent = s.mac + '  ·  ' + (s.type === 2 ? '2구' : '1구');
+    setConn(s.connected ? 'up' : 'down',
+            s.connected ? '연결됨' : '연결 안 됨');
+    $('#c_connect').disabled = busy || s.connected;
+    const one = s.type !== 2;
+    $('#sw2').classList.toggle('hide', one);
+    $('#swall').classList.toggle('hide', one);
+    $('#f_sw2').hidden = one;
+    $('#f_swall').hidden = one;
+  } catch (e) {
+    if (String(e.message).indexOf('PIN') >= 0) {
+      $('#pinbox').classList.remove('hide');
+      $('#meta').textContent = 'PIN 을 입력하세요.';
+      setConn('', '확인 불가');
+    } else {
+      $('#meta').textContent = '서버 응답 없음: ' + e.message;
+      setConn('down', 'PC 의 서버가 꺼져 있는 것 같습니다.');
+    }
+  }
+}
+
+/* ---------- 수동 조작 ---------- */
+async function send(sw, action){
+  if (busy) return;
+  setBusy(true);
+  setStatus((sw === 'all' ? '둘 다 ' : '스위치' + sw + ' ') + action.toUpperCase() + ' 전송 중...');
+  try {
+    const r = await jpost('/api/switch', {switch: sw, action: action});
+    setStatus('전송 완료' + (r.connected ? ' (연결 유지 중)' : ''), 'ok');
+  } catch (e) {
+    setStatus('실패: ' + e.message, 'err');
+  } finally {
+    setBusy(false);
+    refresh();
+  }
+}
+
+/* ---------- 예약 ---------- */
+function renderDayPicker(){
+  const box = $('#f_days');
+  box.innerHTML = '';
+  DAY_NAMES.forEach((name, i) => {
+    const el = document.createElement('div');
+    el.className = 'day' + (selectedDays.includes(i) ? ' sel' : '');
+    el.textContent = name;
+    el.onclick = () => {
+      const at = selectedDays.indexOf(i);
+      if (at >= 0) selectedDays.splice(at, 1); else selectedDays.push(i);
+      renderDayPicker();
+    };
+    box.appendChild(el);
+  });
+}
+
+function daysText(days){
+  if (days.length === 7) return '매일';
+  if (days.length === 5 && [0,1,2,3,4].every(d => days.includes(d))) return '평일';
+  if (days.length === 2 && days.includes(5) && days.includes(6)) return '주말';
+  return days.slice().sort((a,b) => a-b).map(d => DAY_NAMES[d]).join(' ');
+}
+function targetText(sw){
+  return sw === 'all' ? '둘 다' : '스위치' + sw;
+}
+
+function renderScheds(items){
+  const box = $('#schedlist');
+  box.innerHTML = '';
+  if (!items.length){
+    box.innerHTML = '<div class="empty">저장된 예약이 없습니다.</div>';
+    return;
+  }
+  items.forEach(it => {
+    const row = document.createElement('div');
+    row.className = 'sched-item' + (it.enabled ? '' : ' off-state');
+
+    const time = document.createElement('div');
+    time.className = 'sched-time';
+    time.textContent = it.time;
+
+    const desc = document.createElement('div');
+    desc.className = 'sched-desc';
+    // 이름을 지었으면 이름을 크게, 나머지는 아래 줄로 내린다
+    const detail = targetText(it.switch) + ' ' + (it.action === 'on' ? '켜기' : '끄기');
+    const what = document.createElement('div');
+    what.className = 'what';
+    what.textContent = it.label || detail;
+    const when = document.createElement('div');
+    when.className = 'when';
+    when.textContent = it.label ? detail + ' · ' + daysText(it.days)
+                                : daysText(it.days);
+    desc.appendChild(what); desc.appendChild(when);
+
+    const toggle = document.createElement('button');
+    toggle.className = 'sched-btn';
+    toggle.textContent = it.enabled ? '켜짐' : '꺼짐';
+    toggle.onclick = () => toggleSched(it.id, !it.enabled);
+
+    const del = document.createElement('button');
+    del.className = 'sched-btn del';
+    del.textContent = '삭제';
+    del.onclick = () => delSched(it.id, it.time);
+
+    row.appendChild(time); row.appendChild(desc);
+    row.appendChild(toggle); row.appendChild(del);
+    box.appendChild(row);
+  });
+}
+
+async function loadScheds(){
+  try {
+    const r = await api('/api/schedules');
+    renderScheds(r.schedules || []);
+  } catch (e) {
+    $('#schedlist').innerHTML = '<div class="empty">예약을 불러오지 못했습니다.</div>';
+  }
+}
+
+async function addSched(){
+  if (!selectedDays.length){ setStatus('요일을 하나 이상 고르세요.', 'err'); return; }
+  const body = {
+    time: $('#f_time').value,
+    days: selectedDays,
+    switch: $('#f_sw').value,
+    action: $('#f_act').value,
+    label: $('#f_label').value.trim()
+  };
+  try {
+    await jpost('/api/schedules', body);
+    $('#f_label').value = '';
+    setStatus('예약을 추가했습니다.', 'ok');
+    loadScheds();
+  } catch (e) {
+    setStatus('예약 추가 실패: ' + e.message, 'err');
+  }
+}
+
+async function toggleSched(id, enabled){
+  try {
+    await jpost('/api/schedules/' + id, {enabled: enabled});
+    loadScheds();
+  } catch (e) {
+    setStatus('변경 실패: ' + e.message, 'err');
+  }
+}
+
+async function delSched(id, time){
+  if (!confirm(time + ' 예약을 삭제할까요?')) return;
+  try {
+    await jpost('/api/schedules/' + id + '/delete', {});
+    setStatus('예약을 삭제했습니다.', 'ok');
+    loadScheds();
+  } catch (e) {
+    setStatus('삭제 실패: ' + e.message, 'err');
+  }
+}
+
+renderDayPicker();
+refresh();
+loadScheds();
+setInterval(() => { if (!busy) { refresh(); loadScheds(); } }, 15000);
+</script>
+</body>
+</html>
