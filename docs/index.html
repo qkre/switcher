@@ -67,6 +67,18 @@
   .note code{background:var(--chip);color:var(--fg);padding:1px 5px;
              border-radius:5px;font-size:13px}
   .note a{color:var(--accent)}
+
+  /* 시리/단축어로 열렸을 때 크게 보여주는 결과 */
+  .auto{border-radius:14px;padding:22px 16px;margin-bottom:12px;text-align:center;
+        border:1px solid var(--line);background:var(--card)}
+  .auto-what{font-size:20px;font-weight:800;margin-bottom:6px}
+  .auto-state{font-size:15px;color:var(--muted)}
+  .auto.ok{background:var(--on);border-color:var(--on)}
+  .auto.ok .auto-what,.auto.ok .auto-state{color:#fff}
+  .auto.err{background:var(--off);border-color:var(--off)}
+  .auto.err .auto-what,.auto.err .auto-state{color:#fff}
+  .diag{font-size:12px;color:var(--muted);padding-top:9px;
+        border-top:1px solid var(--line);margin-top:2px}
 </style>
 </head>
 <body>
@@ -82,6 +94,12 @@
   </div>
 
   <div id="app">
+    <!-- ?do=1:on 처럼 명령을 달고 열렸을 때만 보인다 (시리/단축어용) -->
+    <div class="auto hide" id="autobar">
+      <div class="auto-what" id="auto_what">—</div>
+      <div class="auto-state" id="auto_state">준비 중...</div>
+    </div>
+
     <div class="card">
       <h2>연결</h2>
       <div class="conn">
@@ -132,6 +150,7 @@
           <span data-v="0">그대로</span><span data-v="1">반대로</span>
         </div>
       </div>
+      <div class="diag" id="diag">—</div>
     </div>
 
     <div id="status">준비됨</div>
@@ -308,6 +327,68 @@ function describe(e){
   return msg;
 }
 
+/* ---------- 시리/단축어 자동 실행 ----------
+   주소 뒤에 ?do=1:on  ?do=2:off  ?do=all:off 를 붙여 열면
+   페이지가 뜨자마자 알아서 연결하고 명령을 보낸다.
+
+   requestDevice(기기 선택창)는 반드시 손가락 터치가 있어야 하지만,
+   getDevices()로 기억된 기기를 꺼내 connect()하는 건 터치 없이 된다.
+   브라우저가 getDevices()를 지원하지 않으면 자동 실행은 불가능하고,
+   한 번 눌러서 기기를 골라야 한다. */
+
+function autoLabel(target, action){
+  const who = (target === 'all') ? '둘 다' : '스위치' + target;
+  return who + ' ' + (action === 'on' ? '켜기' : '끄기');
+}
+
+async function rememberedDevice(){
+  if (!navigator.bluetooth.getDevices) return null;
+  try {
+    const list = await navigator.bluetooth.getDevices();
+    return (list && list.length) ? list[0] : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function runAuto(spec){
+  const [target, action] = spec.split(':');
+  const valid = ['1', '2', 'all'].includes(target) && ['on', 'off'].includes(action);
+  const bar = $('#autobar');
+  bar.classList.remove('hide');
+
+  if (!valid) {
+    bar.classList.add('err');
+    $('#auto_what').textContent = '잘못된 명령';
+    $('#auto_state').textContent = 'do=1:on / 2:off / all:off 형태여야 합니다.';
+    return;
+  }
+
+  $('#auto_what').textContent = autoLabel(target, action);
+  $('#auto_state').textContent = '연결하는 중...';
+
+  const known = await rememberedDevice();
+  if (!known) {
+    bar.classList.add('err');
+    $('#auto_state').textContent =
+      '기억된 기기가 없습니다. 아래 연결하기를 눌러 한 번 골라주세요.';
+    return;
+  }
+
+  device = known;
+  device.addEventListener('gattserverdisconnected', onDisconnected);
+  try {
+    await openGatt();
+    $('#auto_state').textContent = '전송 중...';
+    await send(target, action);
+    bar.classList.add('ok');
+    $('#auto_state').textContent = '완료';
+  } catch (e) {
+    bar.classList.add('err');
+    $('#auto_state').textContent = describe(e);
+  }
+}
+
 /* ---------- 시작 ---------- */
 if (!navigator.bluetooth) {
   $('#unsupported').classList.remove('hide');
@@ -315,17 +396,24 @@ if (!navigator.bluetooth) {
 } else {
   renderSettings();
   refresh();
-  /* 이전에 허용한 기기가 있으면 선택창 없이 다시 붙일 수 있다.
-     (지원하지 않는 브라우저에서는 조용히 넘어간다) */
-  if (navigator.bluetooth.getDevices) {
-    navigator.bluetooth.getDevices().then(list => {
-      if (list && list.length && !device) {
-        device = list[0];
+
+  const supportsGetDevices = !!navigator.bluetooth.getDevices;
+  $('#diag').textContent = supportsGetDevices
+    ? '기기 기억(getDevices) 지원 — 시리 자동 실행 가능'
+    : '기기 기억(getDevices) 미지원 — 시리 자동 실행 불가, 매번 기기를 골라야 합니다';
+
+  const spec = new URLSearchParams(location.search).get('do');
+  if (spec) {
+    runAuto(spec);
+  } else {
+    rememberedDevice().then(known => {
+      if (known && !device) {
+        device = known;
         device.addEventListener('gattserverdisconnected', onDisconnected);
         setStatus('이전 기기를 기억하고 있습니다. 연결하기를 누르세요.');
         refresh();
       }
-    }).catch(() => {});
+    });
   }
 }
 </script>
