@@ -177,6 +177,10 @@
       </div>
       <div class="diag" id="diag">—</div>
       <div class="diag" id="svcinfo">기기 정보: 연결 후 표시됩니다.</div>
+      <div class="diag" id="charinfo">스위처 서비스 내부: 연결 후 표시됩니다.</div>
+      <button class="ghost bat-btn" id="watchbtn" onclick="toggleWatch()"
+              style="margin-top:10px">알림 관찰 시작</button>
+      <div class="diag hide" id="watchlog">—</div>
     </div>
 
     <div id="status">준비됨</div>
@@ -353,6 +357,86 @@ async function readBattery(){
   }
 }
 
+/* ---------- 스위처 서비스 내부 들여다보기 (진단) ----------
+   표준 배터리 서비스(180f)가 없는 기기라도, 제조사가 자기 서비스 안에
+   상태/잔량을 넣어두는 경우가 있다. 읽기만 하고 쓰지는 않는다. */
+
+function hex(dataView){
+  return [...new Uint8Array(dataView.buffer)]
+    .map(b => b.toString(16).padStart(2, '0')).join(' ');
+}
+
+function propsOf(c){
+  const p = c.properties;
+  return ['read', 'write', 'writeWithoutResponse', 'notify', 'indicate']
+    .filter(k => p[k]).join(',') || '-';
+}
+
+async function dumpSwitcherChars(server){
+  const lines = [];
+  try {
+    const svc = await server.getPrimaryService(SERVICE_UUID);
+    for (const c of await svc.getCharacteristics()) {
+      const short = c.uuid.slice(4, 8);
+      const tag = (c.uuid === CHAR_UUID) ? '(명령용)' : '';
+      let value = '';
+      if (c.properties.read) {
+        try {
+          const v = await c.readValue();
+          value = ' → ' + (v.byteLength ? hex(v) : '(빈 값)');
+        } catch (e) {
+          value = ' → 읽기 실패';
+        }
+      }
+      lines.push(short + ' [' + propsOf(c) + ']' + tag + value);
+    }
+  } catch (e) {
+    return '읽지 못했습니다: ' + describe(e);
+  }
+  return lines.join('   |   ');
+}
+
+/* ---------- 알림 관찰 ----------
+   상태 값을 notify 로만 흘려보내는 기기가 있어서, 잡히는 걸 그대로 보여준다. */
+let watching = [];
+
+async function toggleWatch(){
+  const log = $('#watchlog');
+  const btn = $('#watchbtn');
+  if (watching.length) {
+    for (const c of watching) {
+      try { await c.stopNotifications(); } catch (e) {}
+    }
+    watching = [];
+    btn.textContent = '알림 관찰 시작';
+    $('#watchlog').classList.add('hide');
+    return;
+  }
+  if (!connected()) { setStatus('먼저 연결하세요.', 'err'); return; }
+  log.classList.remove('hide');
+  log.textContent = '관찰 중... 스위치를 눌러보거나 잠시 기다려 주세요.';
+  try {
+    const svc = await device.gatt.getPrimaryService(SERVICE_UUID);
+    for (const c of await svc.getCharacteristics()) {
+      if (!c.properties.notify && !c.properties.indicate) continue;
+      c.addEventListener('characteristicvaluechanged', e => {
+        const short = e.target.uuid.slice(4, 8);
+        log.textContent = short + ' → ' + hex(e.target.value) +
+                          '   (' + new Date().toLocaleTimeString() + ')';
+      });
+      await c.startNotifications();
+      watching.push(c);
+    }
+    if (!watching.length) {
+      log.textContent = '알림(notify)을 지원하는 characteristic 이 없습니다.';
+      return;
+    }
+    btn.textContent = '알림 관찰 중지';
+  } catch (e) {
+    log.textContent = '관찰 실패: ' + describe(e);
+  }
+}
+
 /* ---------- 기기가 실제로 뭘 제공하는지 (진단) ---------- */
 async function probeServices(server){
   const found = [];
@@ -377,6 +461,9 @@ async function probeServices(server){
     }
   } catch (e) { /* 기기정보 서비스 없음 */ }
 
+  $('#charinfo').textContent =
+    '스위처 서비스(150b) 내부: ' + await dumpSwitcherChars(server);
+
   const parts = ['서비스: ' + (found.join(' ') || '없음')];
   if (info.length) parts.push(info.join(' · '));
   if (!found.some(f => f.startsWith('180f'))) {
@@ -388,6 +475,8 @@ async function probeServices(server){
 function onDisconnected(){
   characteristic = null;
   batteryChar = null;
+  watching = [];
+  $('#watchbtn').textContent = '알림 관찰 시작';
   $('#batcard').classList.add('hide');
   setStatus('연결이 끊겼습니다. 다시 연결하세요.', 'err');
   refresh();
