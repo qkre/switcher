@@ -78,7 +78,22 @@
   .auto.err{background:var(--off);border-color:var(--off)}
   .auto.err .auto-what,.auto.err .auto-state{color:#fff}
   .diag{font-size:12px;color:var(--muted);padding-top:9px;
-        border-top:1px solid var(--line);margin-top:2px}
+        border-top:1px solid var(--line);margin-top:2px;
+        word-break:break-all;line-height:1.45}
+
+  /* ---- 배터리 ---- */
+  .bat{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .bat-pct{font-size:26px;font-weight:800;min-width:78px;
+           font-variant-numeric:tabular-nums}
+  .bat-bar{flex:1;height:12px;border-radius:99px;background:var(--chip);
+           overflow:hidden}
+  .bat-bar i{display:block;height:100%;width:0;border-radius:99px;
+             background:var(--on);transition:width .3s ease}
+  .bat-bar i.low{background:var(--off)}
+  .bat-bar i.mid{background:#c98a1a}
+  /* .ghost 는 연결 카드 안으로 한정된 규칙이라 여기선 직접 지정한다 */
+  .bat-btn{width:100%;padding:12px;font-size:14px;
+           background:var(--chip);color:var(--fg)}
 </style>
 </head>
 <body>
@@ -136,6 +151,16 @@
       </div>
     </div>
 
+    <!-- 스위처가 표준 배터리 서비스(180f)를 제공할 때만 보인다 -->
+    <div class="card hide" id="batcard">
+      <h2>배터리</h2>
+      <div class="bat">
+        <div class="bat-pct" id="bat_pct">—</div>
+        <div class="bat-bar"><i id="bat_fill"></i></div>
+      </div>
+      <button class="ghost bat-btn" onclick="readBattery()">새로고침</button>
+    </div>
+
     <div class="card">
       <h2>설정</h2>
       <div class="opt">
@@ -151,6 +176,7 @@
         </div>
       </div>
       <div class="diag" id="diag">—</div>
+      <div class="diag" id="svcinfo">기기 정보: 연결 후 표시됩니다.</div>
     </div>
 
     <div id="status">준비됨</div>
@@ -161,6 +187,20 @@
 /* 안드로이드 Flutter 앱(main.dart) 및 pyswitcherio 와 동일한 값 */
 const SERVICE_UUID = '0000150b-0000-1000-8000-00805f9b34fb';
 const CHAR_UUID    = '000015ba-0000-1000-8000-00805f9b34fb';
+
+/* 표준 서비스. 스위처가 제공하지 않을 수도 있으므로 전부 실패해도 무해하게 다룬다.
+   Web Bluetooth 는 requestDevice 때 optionalServices 에 적어둔 서비스만
+   나중에 접근할 수 있다. 그래서 미리 후보를 다 적어둔다. */
+const BATTERY_SERVICE = '0000180f-0000-1000-8000-00805f9b34fb';
+const BATTERY_CHAR    = '00002a19-0000-1000-8000-00805f9b34fb';
+const DEVINFO_SERVICE = '0000180a-0000-1000-8000-00805f9b34fb';
+const DEVINFO_CHARS = {
+  '00002a29-0000-1000-8000-00805f9b34fb': '제조사',
+  '00002a24-0000-1000-8000-00805f9b34fb': '모델',
+  '00002a26-0000-1000-8000-00805f9b34fb': '펌웨어',
+  '00002a27-0000-1000-8000-00805f9b34fb': '하드웨어',
+};
+const OPTIONAL_SERVICES = [SERVICE_UUID, BATTERY_SERVICE, DEVINFO_SERVICE];
 
 /* 명령 바이트: 1구 on=00 off=01 / 2구 on=05 off=03 */
 const KEYS = {
@@ -243,7 +283,7 @@ async function connect(){
         { services: [SERVICE_UUID] },
         { namePrefix: 'SWITCHER' }
       ],
-      optionalServices: [SERVICE_UUID]
+      optionalServices: OPTIONAL_SERVICES
     });
     device.addEventListener('gattserverdisconnected', onDisconnected);
     setConn('busy', '연결하는 중...');
@@ -261,10 +301,94 @@ async function openGatt(){
   const server = await device.gatt.connect();
   const service = await server.getPrimaryService(SERVICE_UUID);
   characteristic = await service.getCharacteristic(CHAR_UUID);
+  /* 배터리/기기정보는 있으면 좋고 없어도 되는 부가 기능이다.
+     여기서 실패해도 스위치 제어에는 영향이 없어야 한다. */
+  setupBattery(server).catch(() => {});
+  probeServices(server).catch(() => {});
+}
+
+/* ---------- 배터리 ---------- */
+let batteryChar = null;
+
+function showBattery(pct){
+  $('#batcard').classList.remove('hide');
+  $('#bat_pct').textContent = pct + '%';
+  const fill = $('#bat_fill');
+  fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+  fill.className = pct <= 15 ? 'low' : (pct <= 40 ? 'mid' : '');
+}
+
+async function setupBattery(server){
+  batteryChar = null;
+  let bs;
+  try {
+    bs = await server.getPrimaryService(BATTERY_SERVICE);
+  } catch (e) {
+    // 이 기기는 표준 배터리 서비스를 제공하지 않는다
+    $('#batcard').classList.add('hide');
+    $('#bat_pct').textContent = '—';
+    $('#bat_fill').style.width = '0';
+    $('#bat_fill').className = '';
+    return;
+  }
+  batteryChar = await bs.getCharacteristic(BATTERY_CHAR);
+  try {
+    await batteryChar.startNotifications();
+    batteryChar.addEventListener('characteristicvaluechanged',
+      e => showBattery(e.target.value.getUint8(0)));
+  } catch (e) {
+    // 알림을 지원하지 않으면 새로고침 버튼으로 읽으면 된다
+  }
+  await readBattery();
+}
+
+async function readBattery(){
+  if (!batteryChar) return;
+  try {
+    const v = await batteryChar.readValue();
+    showBattery(v.getUint8(0));
+  } catch (e) {
+    $('#bat_pct').textContent = '—';
+    setStatus('배터리를 읽지 못했습니다: ' + describe(e), 'err');
+  }
+}
+
+/* ---------- 기기가 실제로 뭘 제공하는지 (진단) ---------- */
+async function probeServices(server){
+  const found = [];
+  for (const uuid of OPTIONAL_SERVICES) {
+    try {
+      const svc = await server.getPrimaryService(uuid);
+      const chars = await svc.getCharacteristics();
+      const short = uuid.slice(4, 8);
+      found.push(short + '(' + chars.length + ')');
+    } catch (e) { /* 없는 서비스 */ }
+  }
+
+  const info = [];
+  try {
+    const di = await server.getPrimaryService(DEVINFO_SERVICE);
+    for (const [uuid, label] of Object.entries(DEVINFO_CHARS)) {
+      try {
+        const c = await di.getCharacteristic(uuid);
+        const text = new TextDecoder().decode(await c.readValue()).trim();
+        if (text) info.push(label + ' ' + text);
+      } catch (e) { /* 없는 항목 */ }
+    }
+  } catch (e) { /* 기기정보 서비스 없음 */ }
+
+  const parts = ['서비스: ' + (found.join(' ') || '없음')];
+  if (info.length) parts.push(info.join(' · '));
+  if (!found.some(f => f.startsWith('180f'))) {
+    parts.push('배터리 서비스(180f) 없음 - 이 기기는 잔량을 알려주지 않습니다.');
+  }
+  $('#svcinfo').textContent = '기기 정보: ' + parts.join(' | ');
 }
 
 function onDisconnected(){
   characteristic = null;
+  batteryChar = null;
+  $('#batcard').classList.add('hide');
   setStatus('연결이 끊겼습니다. 다시 연결하세요.', 'err');
   refresh();
 }
