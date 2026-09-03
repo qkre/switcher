@@ -178,8 +178,10 @@
       <div class="diag" id="diag">—</div>
       <div class="diag" id="svcinfo">기기 정보: 연결 후 표시됩니다.</div>
       <div class="diag" id="charinfo">스위처 서비스 내부: 연결 후 표시됩니다.</div>
-      <button class="ghost bat-btn" id="watchbtn" onclick="toggleWatch()"
-              style="margin-top:10px">알림 관찰 시작</button>
+      <button class="ghost bat-btn" onclick="rereadChars()"
+              style="margin-top:10px">지금 값 다시 읽기</button>
+      <button class="ghost bat-btn hide" id="watchbtn" onclick="toggleWatch()"
+              style="margin-top:8px">알림 관찰 시작</button>
       <div class="diag hide" id="watchlog">—</div>
     </div>
 
@@ -372,11 +374,23 @@ function propsOf(c){
     .filter(k => p[k]).join(',') || '-';
 }
 
+/* 연결 후에도 눌러서 다시 읽을 수 있게. 스위치를 켜고 끈 뒤 값이 바뀌는지
+   비교해 보면 이 characteristic 이 상태를 담고 있는지 알 수 있다. */
+async function rereadChars(){
+  if (!connected()) { setStatus('먼저 연결하세요.', 'err'); return; }
+  $('#charinfo').textContent = '스위처 서비스(150b) 내부: 읽는 중...';
+  const text = await dumpSwitcherChars(device.gatt);
+  const stamp = new Date().toLocaleTimeString();
+  $('#charinfo').textContent = '스위처 서비스(150b) 내부: ' + text + '   [' + stamp + ']';
+}
+
 async function dumpSwitcherChars(server){
   const lines = [];
+  let hasNotify = false;
   try {
     const svc = await server.getPrimaryService(SERVICE_UUID);
     for (const c of await svc.getCharacteristics()) {
+      if (c.properties.notify || c.properties.indicate) hasNotify = true;
       const short = c.uuid.slice(4, 8);
       const tag = (c.uuid === CHAR_UUID) ? '(명령용)' : '';
       let value = '';
@@ -393,6 +407,8 @@ async function dumpSwitcherChars(server){
   } catch (e) {
     return '읽지 못했습니다: ' + describe(e);
   }
+  // notify 를 지원하는 게 하나도 없으면 관찰 버튼은 의미가 없으니 숨긴다
+  $('#watchbtn').classList.toggle('hide', !hasNotify);
   return lines.join('   |   ');
 }
 
