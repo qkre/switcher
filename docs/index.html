@@ -722,10 +722,26 @@ async function runAuto(spec){
     return;
   }
 
-  device = known;
-  device.addEventListener('gattserverdisconnected', onDisconnected);
+  /* 수동 연결과 같은 절차를 쓴다. 바로 붙어보고, 안 되면 광고를 기다린다.
+     이게 없으면 첫 connect 한 번 실패로 시리 명령이 통째로 날아간다. */
+  $('#auto_state').textContent = '연결하는 중... (최대 15초)';
+  let ok = false;
   try {
-    await openGatt();
+    ok = await autoConnect(known);
+  } catch (e) {
+    ok = false;
+  }
+  if (!ok) {
+    device = null;
+    characteristic = null;
+    bar.classList.add('err');
+    $('#auto_state').textContent =
+      '스위처에 붙지 못했습니다. 가까이 가서 다시 시도하세요.';
+    refresh();
+    return;
+  }
+
+  try {
     $('#auto_state').textContent = '전송 중...';
     await send(target, action);
     bar.classList.add('ok');
@@ -734,6 +750,7 @@ async function runAuto(spec){
     bar.classList.add('err');
     $('#auto_state').textContent = describe(e);
   }
+  refresh();
 }
 
 /* ---------- 시작 ---------- */

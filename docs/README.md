@@ -55,7 +55,8 @@ iOS 사파리와 크롬은 Web Bluetooth 를 지원하지 않습니다. 반드�
 단축어 구성: [URL] 액션에 위 주소 -> [URL 열기] 액션. 이름을 "불 꺼" 처럼 지으면
 시리가 그 이름을 알아듣습니다.
 
-되는지 여부는 Bluefy 가 `navigator.bluetooth.getDevices()` 를 지원하는지에 달려 있습니다.
+Bluefy 는 getDevices() 와 watchAdvertisements() 를 모두 지원하는 것으로 확인됐다.
+자동 연결 절차(재시도 + 광고 대기)를 시리 경로에도 그대로 쓴다.
 페이지 맨 아래 "설정" 카드에 지원 여부가 표시됩니다.
 
   * 지원함  -> 기기 선택창 없이 자동 전송. 시리로 쓸 수 있습니다.
@@ -165,3 +166,12 @@ Bluefy 는 `getDevices()` 를 지원한다(기기를 기억한다). 그런데 �
 
 브라우저가 `watchAdvertisements` 를 지원하지 않으면 2단계는 건너뛴다.
 지원 여부는 `?debug=1` 의 진단줄에서 볼 수 있다.
+
+### Bluefy 지원 현황 (실기기 확인)
+
+    getDevices()          지원  - 기기를 기억한다
+    watchAdvertisements() 지원  - 이걸 써야 실제로 재연결된다
+
+`getDevices()` 가 돌려준 기기에 바로 `gatt.connect()` 하면 숫자 `2` 를 던지며
+실패한다. `watchAdvertisements()` 로 기기가 다시 보일 때까지 기다렸다가
+연결하면 붙는다. 자동 연결과 `?do=` 시리 경로 모두 이 절차를 쓴다.
