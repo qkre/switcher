@@ -175,14 +175,18 @@
           <span data-v="0">그대로</span><span data-v="1">반대로</span>
         </div>
       </div>
-      <div class="diag" id="diag">—</div>
-      <div class="diag" id="svcinfo">기기 정보: 연결 후 표시됩니다.</div>
-      <div class="diag" id="charinfo">스위처 서비스 내부: 연결 후 표시됩니다.</div>
-      <button class="ghost bat-btn" onclick="rereadChars()"
-              style="margin-top:10px">지금 값 다시 읽기</button>
-      <button class="ghost bat-btn hide" id="watchbtn" onclick="toggleWatch()"
-              style="margin-top:8px">알림 관찰 시작</button>
-      <div class="diag hide" id="watchlog">—</div>
+      <!-- 진단용. 평소엔 감춰두고 주소에 ?debug=1 을 붙였을 때만 보인다.
+           이 스위처는 배터리(180f)도 상태 읽기도 지원하지 않는 걸로 확인됐다. -->
+      <div class="hide" id="debugbox">
+        <div class="diag" id="diag">—</div>
+        <div class="diag" id="svcinfo">기기 정보: 연결 후 표시됩니다.</div>
+        <div class="diag" id="charinfo">스위처 서비스 내부: 연결 후 표시됩니다.</div>
+        <button class="ghost bat-btn" onclick="rereadChars()"
+                style="margin-top:10px">지금 값 다시 읽기</button>
+        <button class="ghost bat-btn hide" id="watchbtn" onclick="toggleWatch()"
+                style="margin-top:8px">알림 관찰 시작</button>
+        <div class="diag hide" id="watchlog">—</div>
+      </div>
     </div>
 
     <div id="status">준비됨</div>
@@ -277,13 +281,16 @@ function refresh(){
 }
 
 /* ---------- 연결 ---------- */
-async function connect(){
-  if (busy) return;
-  setBusy(true);
-  setConn('busy', '기기를 고르세요...');
-  try {
-    /* requestDevice 는 반드시 사용자가 누른 직후에만 호출할 수 있다.
-       이름이 광고에서 빠질 때가 있어 서비스 UUID 로도 잡히게 필터를 둘 준다. */
+/* 필요할 때 알아서 연결한다.
+
+   requestDevice(기기 선택창)는 명세상 "사용자가 누른 직후"에만 열 수 있다.
+   그래서 이 함수는 버튼 핸들러 안에서, 다른 await 보다 먼저 불려야 한다.
+   이미 고른 기기가 있으면 선택창 없이 바로 붙는다. */
+async function ensureConnected(){
+  if (connected()) return;
+  if (!device) {
+    setConn('busy', '기기를 고르세요...');
+    /* 이름이 광고에서 빠질 때가 있어 서비스 UUID 로도 잡히게 필터를 둘 준다. */
     device = await navigator.bluetooth.requestDevice({
       filters: [
         { services: [SERVICE_UUID] },
@@ -292,8 +299,16 @@ async function connect(){
       optionalServices: OPTIONAL_SERVICES
     });
     device.addEventListener('gattserverdisconnected', onDisconnected);
-    setConn('busy', '연결하는 중...');
-    await openGatt();
+  }
+  setConn('busy', '연결하는 중...');
+  await openGatt();
+}
+
+async function connect(){
+  if (busy) return;
+  setBusy(true);
+  try {
+    await ensureConnected();
     setStatus('연결됐습니다.', 'ok');
   } catch (e) {
     characteristic = null;
@@ -532,11 +547,7 @@ async function send(target, action){
   setStatus((target === 'all' ? '둘 다 ' : '스위치' + target + ' ')
             + action.toUpperCase() + ' 전송 중...');
   try {
-    if (!connected()){
-      /* 끊겨 있으면 한 번 되살려 본다. 이미 고른 기기라 선택창은 안 뜬다. */
-      if (!device) throw new Error('먼저 연결하기를 누르세요.');
-      await openGatt();
-    }
+    await ensureConnected();
     for (const t of targets) await writeKey(t, action);
     setStatus('전송 완료', 'ok');
   } catch (e) {
@@ -631,17 +642,29 @@ if (!navigator.bluetooth) {
     ? '기기 기억(getDevices) 지원 — 시리 자동 실행 가능'
     : '기기 기억(getDevices) 미지원 — 시리 자동 실행 불가, 매번 기기를 골라야 합니다';
 
-  const spec = new URLSearchParams(location.search).get('do');
+  const params = new URLSearchParams(location.search);
+  if (params.get('debug') === '1') {
+    $('#debugbox').classList.remove('hide');
+  }
+
+  const spec = params.get('do');
   if (spec) {
     runAuto(spec);
   } else {
-    rememberedDevice().then(known => {
-      if (known && !device) {
-        device = known;
-        device.addEventListener('gattserverdisconnected', onDisconnected);
-        setStatus('이전 기기를 기억하고 있습니다. 연결하기를 누르세요.');
-        refresh();
+    /* 기억된 기기가 있으면 손 안 대고 바로 붙는다.
+       gatt.connect() 는 선택창이 없어 사용자 조작 없이도 호출할 수 있다. */
+    rememberedDevice().then(async known => {
+      if (!known || device) return;
+      device = known;
+      device.addEventListener('gattserverdisconnected', onDisconnected);
+      setConn('busy', '자동으로 연결하는 중...');
+      try {
+        await openGatt();
+        setStatus('자동으로 연결됐습니다.', 'ok');
+      } catch (e) {
+        setStatus('자동 연결 실패: ' + describe(e), 'err');
       }
+      refresh();
     });
   }
 }
